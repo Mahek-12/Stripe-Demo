@@ -1,12 +1,9 @@
-import { Grid2 as Grid, Box, Card, Stack, Typography } from "@mui/material";
-
-import Link from "next/link";
-import AuthLogin from "./login/page";
+import Login from "./components/Login";
 
 export default function Home() {
   return (
     <>
-      <AuthLogin />
+      <Login />
     </>
   );
 }
