@@ -6,7 +6,8 @@ const {
   forgotPassword,
   resetPassword,
   changePassword,
-  getMe,
+  uploadProfilePicture,
+  getProfile,
 } = require("../controllers/authController");
 const auth = require("../middleware/auth");
 
@@ -18,6 +19,7 @@ router.post("/logout", auth, logout);
 router.post("/forgot-password", forgotPassword);
 router.post("/reset-password/:token", resetPassword);
 router.post("/change-password", auth, changePassword);
-router.get("/me", auth, getMe);
+router.get("/profile", auth, getProfile);
+router.post("/upload-profile-picture", auth, uploadProfilePicture);
 
 module.exports = router;

@@ -17,7 +17,7 @@ export const useLogin = () => {
     mutationFn: login,
     onSuccess: (response: { token: any; message: any }) => {
       loginContext(response.token);
-      onSuccessAlert(response?.message || "Login successful");
+      onSuccessAlert(response?.message);
     },
     onError: (err: any) => {
       onErrorAlert(err?.response?.data?.message);

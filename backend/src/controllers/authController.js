@@ -1,37 +1,15 @@
 const User = require("../models/User");
-const { z } = require("zod");
+// const { z } = require("zod");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
-
-const registerSchema = z
-  .object({
-    name: z.string().min(1, "Name is required").trim(),
-    email: z.string().email("Invalid email address"),
-    password: z.string().min(8, "Password must be at least 8 characters"),
-  })
-  .strict();
-
-const loginSchema = z
-  .object({
-    email: z.string().email("Invalid email address"),
-    password: z.string().min(1, "Password is required"),
-  })
-  .strict();
-
-const forgotPasswordSchema = z
-  .object({
-    email: z.string().email("Invalid email address"),
-  })
-  .strict();
-
-const changePasswordSchema = z
-  .object({
-    currentPassword: z.string().min(1, "Current password is required"),
-    newPassword: z
-      .string()
-      .min(8, "New password must be at least 8 characters"),
-  })
-  .strict();
+const multer = require("multer");
+const path = require("path");
+const {
+  registerSchema,
+  loginSchema,
+  forgotPasswordSchema,
+  changePasswordSchema,
+} = require("../schemas");
 
 exports.register = async (req, res) => {
   try {
@@ -141,7 +119,7 @@ exports.login = async (req, res) => {
   }
 };
 
-exports.getMe = async (req, res) => {
+exports.getProfile = async (req, res) => {
   try {
     const userId = req.user._id;
     const user = await User.findById(userId);
@@ -263,7 +241,7 @@ exports.changePassword = async (req, res) => {
 
     const { currentPassword, newPassword } = validationResult.data;
 
-    const userId = req.user._id; // Comes from auth middleware
+    const userId = req.user._id;
     const user = await User.findById(userId).select("+password");
 
     if (!user) {
@@ -295,6 +273,88 @@ exports.changePassword = async (req, res) => {
     return res.status(500).json({
       error: "Server error",
       message: "An error occurred while updating the password",
+    });
+  }
+};
+
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, "uploads/");
+  },
+  filename: function (req, file, cb) {
+    cb(null, Date.now() + path.extname(file.originalname));
+  },
+});
+
+const fileFilter = (req, file, cb) => {
+  // Accept images only
+  if (!file.originalname.match(/\.(jpg|JPG|jpeg|JPEG|png|PNG|gif|GIF)$/)) {
+    req.fileValidationError = "Only image files are allowed!";
+    return cb(new Error("Only image files are allowed!"), false);
+  }
+  cb(null, true);
+};
+
+const upload = multer({
+  storage: storage,
+  fileFilter: fileFilter,
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB max-size
+  },
+});
+
+exports.uploadProfilePicture = async (req, res) => {
+  try {
+    //Handles single file upload
+    upload.single("profilePicture")(req, res, async (err) => {
+      if (err instanceof multer.MulterError) {
+        // A Multer error occurred when uploading
+        return res.status(400).json({
+          error: "Upload error",
+          message: err.message,
+        });
+      } else if (err) {
+        // An unknown error occurred
+        return res.status(400).json({
+          error: "Upload error",
+          message: err.message,
+        });
+      }
+
+      // Check if file exists
+      if (!req.file) {
+        return res.status(400).json({
+          error: "Validation failed",
+          message: "Please upload a file",
+        });
+      }
+
+      const userId = req.user._id; // From auth middleware
+      const user = await User.findById(userId);
+
+      if (!user) {
+        return res.status(404).json({
+          error: "User not found",
+        });
+      }
+
+      // Update user with file path
+      user.profilePicture = req.file.path;
+      await user.save();
+
+      return res.status(200).json({
+        message: "Profile picture uploaded successfully",
+        file: {
+          filename: req.file.filename,
+          path: req.file.path,
+        },
+      });
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({
+      error: "Server error",
+      message: "An error occurred while uploading the file",
     });
   }
 };

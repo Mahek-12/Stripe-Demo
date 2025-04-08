@@ -1,6 +1,7 @@
 require("dotenv").config();
 
 const express = require("express");
+const path = require("path");
 require("./db/conn");
 const cors = require("cors");
 const authRoutes = require("./routers/authRoutes");
@@ -8,9 +9,17 @@ const authRoutes = require("./routers/authRoutes");
 const app = express();
 const port = process.env.PORT;
 
-// Middleware
-app.use(cors());
+app.use(
+  cors({
+    origin: "http://localhost:3000",
+    credentials: true,
+  })
+);
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+//File upload
+app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
 
 // Routes
 app.use("/api/auth", authRoutes);

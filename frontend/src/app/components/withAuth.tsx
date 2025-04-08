@@ -1,4 +1,3 @@
-// src/components/withAuth.tsx
 "use client";
 
 import { useAuth } from "@/context/AuthContext";
@@ -7,16 +6,16 @@ import { useEffect } from "react";
 
 const withAuth = (Component: React.ComponentType<any>) => {
   const AuthenticatedComponent = (props: any) => {
-    const { isAuthenticated } = useAuth();
+    const { isAuthenticated, loading } = useAuth();
     const router = useRouter();
 
     useEffect(() => {
-      if (!isAuthenticated) {
-        router.replace("/");
+      if (!loading && !isAuthenticated) {
+        router.push("/");
       }
-    }, [isAuthenticated]);
+    }, [loading, isAuthenticated, router]);
 
-    if (!isAuthenticated) return null; // or loader
+    if (loading) return null;
 
     return <Component {...props} />;
   };
