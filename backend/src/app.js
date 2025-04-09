@@ -19,7 +19,14 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 //File upload
-app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
+app.use(
+  "/uploads",
+  express.static(path.join(__dirname, "../uploads"), {
+    setHeaders: (res, path, stat) => {
+      res.set("Cache-Control", "no-store");
+    },
+  })
+);
 
 // Routes
 app.use("/api/auth", authRoutes);

@@ -62,10 +62,14 @@ const Home = () => {
   }
 
   const apiProfilePic = user?.user?.profilePicture
-    ? `${
-        process.env.NEXT_PUBLIC_API_BASE_URL
-      }/${user?.user?.profilePicture.replace(/\\/g, "/")}`
+    ? `${process.env.NEXT_PUBLIC_API_URL}/${user?.user?.profilePicture.replace(
+        /\\/g,
+        "/"
+      )}`
     : null;
+
+  console.log("profilePic", profilePic);
+  console.log("apiProfilePic", apiProfilePic);
 
   return (
     <CardWrapper>
@@ -119,12 +123,7 @@ const Home = () => {
           </Typography>
         </Box>
 
-        <Button
-          variant="contained"
-          color="error"
-          onClick={logout}
-          sx={{ mt: 2 }}
-        >
+        <Button variant="contained" onClick={logout} sx={{ mt: 2 }}>
           Logout
         </Button>
       </Stack>
