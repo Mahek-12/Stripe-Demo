@@ -6,6 +6,8 @@ import {
   Button,
   Stack,
   TextField,
+  IconButton,
+  InputAdornment,
   CircularProgress,
 } from "@mui/material";
 import Link from "next/link";
@@ -17,8 +19,10 @@ import {
 } from "../lib/schemas/loginSchema";
 import { useLogin } from "../hooks/useLogin";
 import CardWrapper from "../components/Card";
+import { Visibility, VisibilityOff } from "@mui/icons-material";
 
 const Login = () => {
+  const [showPassword, setShowPassword] = useState(false);
   const {
     register,
     handleSubmit,
@@ -32,6 +36,10 @@ const Login = () => {
 
   const onSubmit = (data: { email: string; password: string }) => {
     loginMutation(data);
+  };
+
+  const togglePasswordVisibility = () => {
+    setShowPassword((prev) => !prev);
   };
 
   return (
@@ -63,13 +71,24 @@ const Login = () => {
             </Typography>
             <TextField
               id="password"
-              type="password"
+              type={showPassword ? "text" : "password"}
               size="small"
               variant="outlined"
               fullWidth
               {...register("password")}
               error={!!errors.password}
               helperText={errors.password?.message}
+              slotProps={{
+                input: {
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <IconButton onClick={togglePasswordVisibility} edge="end">
+                        {showPassword ? <VisibilityOff /> : <Visibility />}
+                      </IconButton>
+                    </InputAdornment>
+                  ),
+                },
+              }}
             />
           </Box>
 
