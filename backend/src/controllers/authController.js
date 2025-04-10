@@ -1,375 +1,342 @@
-const User = require("../models/User");
-// const { z } = require("zod");
+const prisma = require("../config/PrismaClients");
+const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
-const multer = require("multer");
-const path = require("path");
-const {
-  registerSchema,
-  loginSchema,
-  forgotPasswordSchema,
-  changePasswordSchema,
-} = require("../schemas");
 
-exports.register = async (req, res) => {
-  try {
-    const validationResult = registerSchema.safeParse(req.body);
+const authController = {
+  register: async (req, res) => {
+    try {
+      const { name, email, password } = req.body;
 
-    if (!validationResult.success) {
-      return res.status(400).json({
-        error: "Validation failed",
-        details: validationResult.error.errors.map((err) => ({
-          field: err.path.join("."),
-          message: err.message,
-        })),
+      // Check if user already exists
+      const existingUser = await prisma.user.findUnique({
+        where: { email },
       });
-    }
 
-    const { name, email, password } = validationResult.data;
-
-    // Check if user already exists
-    const existingUser = await User.findOne({ email });
-
-    if (existingUser) {
-      return res.status(400).json({
-        error: "Registration failed",
-        message: "Email already registered",
-      });
-    }
-
-    // Create new user
-    const user = await User.create({
-      name,
-      email,
-      password,
-    });
-
-    // Remove password from output
-    user.password = undefined;
-
-    return res.status(201).json({
-      message: "User registered successfully",
-      user,
-    });
-  } catch (error) {
-    console.log(error);
-    return res.status(500).send();
-  }
-};
-
-exports.login = async (req, res) => {
-  try {
-    // Validate request body
-    const validationResult = loginSchema.safeParse(req.body);
-
-    if (!validationResult.success) {
-      return res.status(400).json({
-        error: "Validation failed",
-        details: validationResult.error.errors.map((err) => ({
-          field: err.path.join("."),
-          message: err.message,
-        })),
-      });
-    }
-
-    const { email, password } = validationResult.data;
-
-    // Find user and explicitly select password field
-    const user = await User.findOne({ email }).select("+password");
-
-    if (!user) {
-      return res.status(401).json({
-        error: "Authentication failed",
-        message: "Invalid email or password",
-      });
-    }
-
-    // Check password
-    const isPasswordCorrect = await user.correctPassword(
-      password,
-      user.password
-    );
-
-    if (!isPasswordCorrect) {
-      return res.status(401).json({
-        error: "Authentication failed",
-        message: "Invalid email or password",
-      });
-    }
-
-    // Generate JWT token
-    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, {
-      expiresIn: "24h",
-    });
-
-    // Remove password from output
-    user.password = undefined;
-
-    return res.status(200).json({
-      message: "Login successful",
-      token,
-      user,
-    });
-  } catch (error) {
-    console.log(error);
-    return res.status(500).json({
-      error: "Server error",
-      message: "An error occurred while logging in",
-    });
-  }
-};
-
-exports.getProfile = async (req, res) => {
-  try {
-    const userId = req.user._id;
-    const user = await User.findById(userId);
-
-    if (!user) {
-      return res.status(404).json({
-        error: "User not found",
-        message: "The user no longer exists",
-      });
-    }
-
-    return res.status(200).json({
-      success: true,
-      user,
-    });
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({
-      error: "Server error",
-      message: "An error occurred while fetching user data",
-    });
-  }
-};
-
-exports.forgotPassword = async (req, res) => {
-  try {
-    const validationResult = forgotPasswordSchema.safeParse(req.body);
-
-    if (!validationResult.success) {
-      return res.status(400).json({
-        error: "Validation failed",
-        details: validationResult.error.errors.map((err) => ({
-          field: err.path.join("."),
-          message: err.message,
-        })),
-      });
-    }
-
-    const { email } = validationResult.data;
-
-    const user = await User.findOne({ email });
-
-    if (!user) {
-      return res.status(404).json({
-        error: "User not found",
-        message: "There is no user with that email address exists",
-      });
-    }
-
-    const resetToken = user.createPasswordResetToken();
-    await user.save({ validateBeforeSave: false });
-
-    const resetURL = `${req.protocol}://${req.get(
-      "host"
-    )}/api/auth/reset-password/${resetToken}`;
-
-    return res.status(200).json({
-      message: "Password reset link has been sent",
-      resetURL,
-    });
-  } catch (error) {
-    console.log(error);
-    return res.status(500).json({
-      error: "Server error",
-      message: "An error occurred while resetting password",
-    });
-  }
-};
-
-exports.resetPassword = async (req, res) => {
-  try {
-    const { token } = req.params;
-    const { password } = req.body;
-
-    const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
-
-    const user = await User.findOne({
-      passwordResetToken: hashedToken,
-      passwordResetExpires: { $gt: Date.now() },
-    });
-
-    if (!user) {
-      return res.status(400).json({
-        error: "Token invalid or expired",
-      });
-    }
-
-    user.password = password;
-    user.passwordResetToken = undefined;
-    user.passwordResetExpires = undefined;
-
-    await user.save();
-
-    return res.status(200).json({
-      message: "Password has been reset successfully",
-    });
-  } catch (error) {
-    console.log(error);
-    return res.status(500).json({
-      error: "Server error",
-      message: "Something went wrong",
-    });
-  }
-};
-
-exports.changePassword = async (req, res) => {
-  try {
-    const validationResult = changePasswordSchema.safeParse(req.body);
-
-    if (!validationResult.success) {
-      return res.status(400).json({
-        error: "Validation failed",
-        details: validationResult.error.errors.map((err) => ({
-          field: err.path.join("."),
-          message: err.message,
-        })),
-      });
-    }
-
-    const { currentPassword, newPassword } = validationResult.data;
-
-    const userId = req.user._id;
-    const user = await User.findById(userId).select("+password");
-
-    if (!user) {
-      return res.status(404).json({
-        error: "User not found",
-      });
-    }
-
-    const isPasswordCorrect = await user.correctPassword(
-      currentPassword,
-      user.password
-    );
-
-    if (!isPasswordCorrect) {
-      return res.status(401).json({
-        error: "Authentication failed",
-        message: "Current password is incorrect",
-      });
-    }
-
-    user.password = newPassword;
-    await user.save();
-
-    return res.status(200).json({
-      message: "Password has been updated successfully",
-    });
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({
-      error: "Server error",
-      message: "An error occurred while updating the password",
-    });
-  }
-};
-
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, "uploads/");
-  },
-  filename: function (req, file, cb) {
-    cb(null, Date.now() + path.extname(file.originalname));
-  },
-});
-
-const fileFilter = (req, file, cb) => {
-  // Accept images only
-  if (!file.originalname.match(/\.(jpg|JPG|jpeg|JPEG|png|PNG|gif|GIF)$/)) {
-    req.fileValidationError = "Only image files are allowed!";
-    return cb(new Error("Only image files are allowed!"), false);
-  }
-  cb(null, true);
-};
-
-const upload = multer({
-  storage: storage,
-  fileFilter: fileFilter,
-  limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB max-size
-  },
-});
-
-exports.uploadProfilePicture = async (req, res) => {
-  try {
-    //Handles single file upload
-    upload.single("profilePicture")(req, res, async (err) => {
-      if (err instanceof multer.MulterError) {
-        // A Multer error occurred when uploading
+      if (existingUser) {
         return res.status(400).json({
-          error: "Upload error",
-          message: err.message,
-        });
-      } else if (err) {
-        // An unknown error occurred
-        return res.status(400).json({
-          error: "Upload error",
-          message: err.message,
+          status: "error",
+          message: "User already exists",
         });
       }
 
-      // Check if file exists
-      if (!req.file) {
-        return res.status(400).json({
-          error: "Validation failed",
-          message: "Please upload a file",
+      // Hash password
+      const hashedPassword = await bcrypt.hash(password, 10);
+
+      // Create new user
+      const user = await prisma.user.create({
+        data: {
+          name,
+          email,
+          password: hashedPassword,
+        },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          createdAt: true,
+        },
+      });
+
+      // Generate JWT token
+      const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, {
+        expiresIn: "24h",
+      });
+
+      //Final response , return user data and token
+      res.status(201).json({
+        status: "success",
+        message: "User registered successfully",
+        data: {
+          user,
+          token,
+        },
+      });
+    } catch (error) {
+      console.error("Registration error:", error);
+      res.status(500).json({
+        status: "error",
+        message: "Internal server error",
+      });
+    }
+  },
+
+  login: async (req, res) => {
+    try {
+      const { email, password } = req.body;
+
+      //Find user by email
+      const user = await prisma.user.findUnique({
+        where: { email },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          password: true,
+          createdAt: true,
+        },
+      });
+
+      //check if user exists
+      if (!user) {
+        return res.status(401).json({
+          status: "error",
+          message: "Invalid email or password",
         });
       }
 
-      const userId = req.user._id; // From auth middleware
-      const user = await User.findById(userId);
+      //verify password
+      const isPasswordValid = await bcrypt.compare(password, user.password);
+      if (!isPasswordValid) {
+        return res.status(401).json({
+          status: "error",
+          message: "Invalid email or password",
+        });
+      }
+
+      //Generate JWT token
+      const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, {
+        expiresIn: "24h",
+      });
+
+      //Remove password from user object before sending response
+      const { password: _, ...userWithOutPassword } = user;
+
+      res.status(200).json({
+        status: "success",
+        message: "Login successful",
+        data: {
+          user: userWithOutPassword,
+          token,
+        },
+      });
+    } catch (error) {
+      console.error("Login error:", error);
+      res.status(500).json({
+        status: "error",
+        message: "Internal server error",
+      });
+    }
+  },
+
+  getProfile: async (req, res) => {
+    try {
+      //we have user from auth middleware
+      res.status(200).json({
+        status: "Success",
+        message: "Profile retrieved successfully",
+        user: req.user,
+      });
+    } catch (error) {
+      console.error("Get profile error:", error);
+      res.status(500).json({
+        status: "error",
+        message: "Internal server error",
+      });
+    }
+  },
+
+  logout: async (req, res) => {
+    try {
+      res.status(200).json({
+        status: "success",
+        message: "Logged out successfully",
+      });
+    } catch (error) {
+      console.error("Logout error", error);
+      res.status(500).json({
+        status: "error",
+        message: "Internal server error",
+      });
+    }
+  },
+
+  changePassword: async (req, res) => {
+    try {
+      const { currentPassword, newPassword } = req.body;
+      const userId = req.user.id;
+
+      // Get user with password
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          password: true,
+        },
+      });
+
+      // Verify current password
+      const isPasswordValid = await bcrypt.compare(
+        currentPassword,
+        user.password
+      );
+
+      if (!isPasswordValid) {
+        return res.status(401).json({
+          status: "error",
+          message: "Current password is incorrect",
+        });
+      }
+
+      // Hash new password
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+      // Update password
+      await prisma.user.update({
+        where: { id: userId },
+        data: { password: hashedPassword },
+      });
+
+      res.status(200).json({
+        status: "success",
+        message: "Password changed successfully",
+      });
+    } catch (error) {
+      console.error("Change password error:", error);
+      res.status(500).json({
+        status: "error",
+        message: "Internal server error",
+      });
+    }
+  },
+
+  // Add these methods to your authController object
+  forgotPassword: async (req, res) => {
+    try {
+      const { email } = req.body;
+
+      // Find user by email
+      const user = await prisma.user.findUnique({
+        where: { email },
+      });
 
       if (!user) {
         return res.status(404).json({
-          error: "User not found",
+          status: "error",
+          message: "User not found",
         });
       }
 
-      // Update user with file path
-      user.profilePicture = req.file.path;
-      await user.save();
+      // Generate reset token
+      const resetToken = crypto.randomBytes(32).toString("hex");
+      const resetTokenExpiry = new Date(Date.now() + 3600000); // 1 hour from now
 
-      return res.status(200).json({
-        message: "Profile picture uploaded successfully",
-        file: {
-          filename: req.file.filename,
-          path: req.file.path,
+      // Save reset token and expiry to database
+      await prisma.user.update({
+        where: { email },
+        data: {
+          resetPasswordToken: resetToken,
+          resetPasswordExpires: resetTokenExpiry,
         },
       });
-    });
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({
-      error: "Server error",
-      message: "An error occurred while uploading the file",
-    });
-  }
+
+      // Return the reset token to the client
+      res.status(200).json({
+        status: "success",
+        message: "Password reset token generated",
+        data: {
+          resetToken,
+          expires: resetTokenExpiry,
+        },
+      });
+    } catch (error) {
+      console.error("Forgot password error:", error);
+      res.status(500).json({
+        status: "error",
+        message: "Internal server error",
+      });
+    }
+  },
+
+  resetPassword: async (req, res) => {
+    try {
+      const { token, password } = req.body;
+
+      // Find user with valid reset token
+      const user = await prisma.user.findFirst({
+        where: {
+          resetPasswordToken: token,
+          resetPasswordExpires: {
+            gt: new Date(),
+          },
+        },
+      });
+
+      if (!user) {
+        return res.status(400).json({
+          status: "error",
+          message: "Invalid or expired reset token",
+        });
+      }
+
+      // Hash new password
+      const hashedPassword = await bcrypt.hash(password, 10);
+
+      // Update user's password and clear reset token fields
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          password: hashedPassword,
+          resetPasswordToken: null,
+          resetPasswordExpires: null,
+        },
+      });
+
+      res.status(200).json({
+        status: "success",
+        message: "Password has been reset successfully",
+      });
+    } catch (error) {
+      console.error("Reset password error:", error);
+      res.status(500).json({
+        status: "error",
+        message: "Internal server error",
+      });
+    }
+  },
+
+  uploadProfilePicture: async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({
+          status: "error",
+          message: "No file uploaded",
+        });
+      }
+
+      const userId = req.user.id;
+      const profilePicturePath = req.file.path;
+
+      // Update user's profile picture in database
+      const updatedUser = await prisma.user.update({
+        where: { id: userId },
+        data: {
+          profilePicture: profilePicturePath,
+        },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          profilePicture: true,
+          createdAt: true,
+        },
+      });
+
+      res.status(200).json({
+        status: "success",
+        message: "Profile picture uploaded successfully",
+        data: {
+          user: updatedUser,
+        },
+      });
+    } catch (error) {
+      console.error("Upload profile picture error:", error);
+      res.status(500).json({
+        status: "error",
+        message: "Internal server error",
+      });
+    }
+  },
 };
 
-exports.logout = async (req, res) => {
-  try {
-    return res.status(200).json({
-      success: true,
-      message: "Logged out successfully",
-    });
-  } catch (error) {
-    console.log(error);
-    return res.status(500).json({
-      error: "Server error",
-      message: "An error occurred while logging out",
-    });
-  }
-};
+module.exports = authController;
